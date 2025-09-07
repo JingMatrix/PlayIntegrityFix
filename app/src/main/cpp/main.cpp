@@ -509,3 +509,7 @@ static void companion(int fd) {
 REGISTER_ZYGISK_MODULE(PlayIntegrityFix)
 
 REGISTER_ZYGISK_COMPANION(companion)
+
+extern "C" int __cxa_atexit(void (*func)(void*), void* arg, void* dso) {
+    return 0;
+}
