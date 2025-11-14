@@ -68,17 +68,11 @@ download https://developer.android.com/about/versions PIXEL_VERSIONS_HTML
 BETA_URL=$(grep -o 'https://developer.android.com/about/versions/.*[0-9]"' PIXEL_VERSIONS_HTML | sort -ru | cut -d\" -f1 | head -n1)
 download "$BETA_URL" PIXEL_LATEST_HTML
 
-# Handle Developer Preview vs Beta
-if grep -qE 'Developer Preview|tooltip>.*preview program' PIXEL_LATEST_HTML && [ "$FORCE_PREVIEW" = 0 ]; then
-	# Use the second latest version for beta
-	BETA_URL=$(grep -o 'https://developer.android.com/about/versions/.*[0-9]"' PIXEL_VERSIONS_HTML | sort -ru | cut -d\" -f1 | head -n2 | tail -n1)
-	download "$BETA_URL" PIXEL_BETA_HTML
-else
-	mv -f PIXEL_LATEST_HTML PIXEL_BETA_HTML
-fi
+# Always use the latest available version page
+mv -f PIXEL_LATEST_HTML PIXEL_BETA_HTML
 
-# Get OTA information
-OTA_URL="https://developer.android.com$(grep -o 'href=".*download-ota.*"' PIXEL_BETA_HTML | cut -d\" -f2 | head -n1)"
+# Get OTA information, specifically for the QPR (Quarterly Platform Release) build
+OTA_URL="https://developer.android.com$(grep -o 'href=".*download-ota.*"' PIXEL_BETA_HTML | grep 'qpr' | cut -d\" -f2 | head -n1)"
 download "$OTA_URL" PIXEL_OTA_HTML
 
 # Extract device information
