@@ -6,6 +6,7 @@
 #include "json.hpp"
 
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "zygisk-PIF", __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, "zygisk-PIF", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "zygisk-PIF", __VA_ARGS__)
 
 #define DEX_PATH "/data/adb/modules/playintegrityfix/classes.dex"
@@ -210,7 +211,10 @@ public:
 
         if (testSignedRom) {
             LOGD("--- ROM IS SIGNED WITH TEST KEYS ---");
-            spoofSignature = true;
+            // spoofSignature = true;
+            if (!spoofSignature) {
+                LOGW("However, spoofSignature = false");
+            }
         }
     }
 
