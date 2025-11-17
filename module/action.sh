@@ -50,19 +50,6 @@ if command -v curl > /dev/null 2>&1; then
 	download() { curl --connect-timeout 10 -s "$1" > "$2" || download_fail "$1"; }
 fi
 
-set_random_beta() {
-	if [ "$(echo "$MODEL_LIST" | wc -l)" -ne "$(echo "$PRODUCT_LIST" | wc -l)" ]; then
-		echo "Warning: MODEL_LIST and PRODUCT_LIST have different lengths, using Pixel 6 fallback"
-		MODEL="Pixel 6"
-		PRODUCT="oriole_beta"
-	else
-		count=$(echo "$MODEL_LIST" | wc -l)
-		rand_index=$(( $$ % count ))
-		MODEL=$(echo "$MODEL_LIST" | sed -n "$((rand_index + 1))p")
-		PRODUCT=$(echo "$PRODUCT_LIST" | sed -n "$((rand_index + 1))p")
-	fi
-}
-
 # Get latest Pixel Beta information
 download https://developer.android.com/about/versions PIXEL_VERSIONS_HTML
 BETA_URL=$(grep -o 'https://developer.android.com/about/versions/.*[0-9]"' PIXEL_VERSIONS_HTML | sort -ru | cut -d\" -f1 | head -n1)
@@ -80,31 +67,65 @@ MODEL_LIST="$(grep -A1 'tr id=' PIXEL_OTA_HTML | grep 'td' | sed 's;.*<td>\(.*\)
 PRODUCT_LIST="$(grep -o 'tr id="[^"]*"' PIXEL_OTA_HTML | awk -F\" '{print $2 "_beta"}')"
 OTA_LIST="$(grep 'ota/.*_beta' PIXEL_OTA_HTML | cut -d\" -f2)"
 
-# Select and configure device
-echo "- Selecting Pixel Beta device ..."
-[ -z "$PRODUCT" ] && set_random_beta
-echo "$MODEL ($PRODUCT)"
+# Get fingerprints for all devices
+echo "- Fetching fingerprints for all Pixel Beta devices ..."
+device_count=$(echo "$MODEL_LIST" | wc -l)
+valid_count=0
 
-# Get device fingerprint and security patch from OTA metadata
-(ulimit -f 2; download "$(echo "$OTA_LIST" | grep "$PRODUCT")" PIXEL_ZIP_METADATA) >/dev/null 2>&1
-FINGERPRINT="$(strings PIXEL_ZIP_METADATA | grep -am1 'post-build=' | cut -d= -f2)"
-SECURITY_PATCH="$(strings PIXEL_ZIP_METADATA | grep -am1 'security-patch-level=' | cut -d= -f2)"
+# Start JSON array
+profiles_json="["
+need_comma=false
 
-# Validate required field to prevent empty pif.json
-if [ -z "$FINGERPRINT" ] || [ -z "$SECURITY_PATCH" ]; then
-	# link to download pixel rom metadata that skipped connection check due to ulimit
+i=1
+while [ $i -le $device_count ]; do
+	MODEL=$(echo "$MODEL_LIST" | sed -n "${i}p")
+	PRODUCT=$(echo "$PRODUCT_LIST" | sed -n "${i}p")
+	OTA=$(echo "$OTA_LIST" | sed -n "${i}p")
+
+	echo "  [$i/$device_count] Processing $MODEL ($PRODUCT) ..."
+
+	# Download metadata and extract fingerprint
+	(ulimit -f 2; download "$OTA" "device_metadata") >/dev/null 2>&1
+	FINGERPRINT=$(strings "device_metadata" | grep -am1 'post-build=' | cut -d= -f2)
+	SECURITY_PATCH=$(strings "device_metadata" | grep -am1 'security-patch-level=' | cut -d= -f2)
+
+	# Add to JSON array if valid
+	if [ -n "$FINGERPRINT" ] && [ -n "$SECURITY_PATCH" ]; then
+		if [ "$need_comma" = "true" ]; then
+			profiles_json="$profiles_json,"
+		fi
+		need_comma=true
+
+		profiles_json="$profiles_json
+    {
+        \"FINGERPRINT\": \"$FINGERPRINT\",
+        \"MANUFACTURER\": \"Google\",
+        \"MODEL\": \"$MODEL\",
+        \"SECURITY_PATCH\": \"$SECURITY_PATCH\"
+    }"
+		valid_count=$((valid_count + 1))
+		echo "    ✓ Valid fingerprint found"
+	else
+		echo "    ✗ Failed to extract fingerprint"
+	fi
+
+	rm -f "device_metadata"
+	i=$((i + 1))
+done
+
+# Close JSON array
+profiles_json="$profiles_json
+]"
+
+# Validate we have at least one profile
+if [ $valid_count -eq 0 ]; then
+	echo "[!] No valid profiles found!"
 	download_fail "https://dl.google.com"
 fi
 
-echo "- Dumping values to pif.json ..."
-cat <<EOF | tee pif.json
-{
-  "FINGERPRINT": "$FINGERPRINT",
-  "MANUFACTURER": "Google",
-  "MODEL": "$MODEL",
-  "SECURITY_PATCH": "$SECURITY_PATCH"
-}
-EOF
+echo "- Collected $valid_count device profiles"
+echo "- Writing profiles to pif.json ..."
+echo "$profiles_json" | tee "$TEMPDIR/pif.json"
 
 cat "$TEMPDIR/pif.json" > /data/adb/pif.json
 echo "- new pif.json saved to /data/adb/pif.json"

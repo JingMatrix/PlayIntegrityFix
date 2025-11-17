@@ -187,7 +187,7 @@ public:
         if (jsonSize > 0) {
             jsonStr.resize(jsonSize);
             jsonSize = xread(fd, jsonStr.data(), jsonSize);
-            json = nlohmann::json::parse(jsonStr, nullptr, false, true);
+            profiles = nlohmann::json::parse(jsonStr, nullptr, false, true);
         }
 
         bool trickyStore = false;
@@ -200,6 +200,14 @@ public:
 
         LOGD("Dex file size: %zu", dexSize);
         LOGD("Json file size: %zu", jsonSize);
+
+        if (profiles.is_array() && !profiles.empty()) {
+            index = index % profiles.size();
+            LOGD("Selecting profile at index %d", index);
+            json = profiles[index];
+        } else {
+            json = profiles; // Keep compatibility with old config
+        }
 
         parseJSON();
 
@@ -253,6 +261,8 @@ private:
     JNIEnv *env = nullptr;
     std::vector<char> dexVector;
     nlohmann::json json;
+    nlohmann::json profiles;
+    int index = 0;
     bool spoofProps = true;
     bool spoofProvider = true;
     bool spoofSignature = false;
